@@ -39,7 +39,11 @@ import { resolveSlackAllowListMatch, resolveSlackUserAllowed } from "../allow-li
 import { resolveSlackEffectiveAllowFrom } from "../auth.js";
 import { resolveSlackChannelConfig } from "../channel-config.js";
 import { normalizeSlackChannelType, type SlackMonitorContext } from "../context.js";
-import { resolveSlackMedia, resolveSlackThreadStarter } from "../media.js";
+import {
+  resolveSlackFilePlaceholder,
+  resolveSlackMediaList,
+  resolveSlackThreadStarter,
+} from "../media.js";
 
 import type { PreparedSlackMessage } from "./types.js";
 
@@ -290,11 +294,7 @@ export async function prepareSlackMessage(params: {
     ctx.logger.info({ channel: message.channel, reason: "no-mention" }, "skipping channel message");
     if (ctx.historyLimit > 0) {
       const pendingText = (message.text ?? "").trim();
-      const fallbackFile = message.files?.[0]?.name
-        ? `[Slack file: ${message.files[0].name}]`
-        : message.files?.length
-          ? "[Slack file]"
-          : "";
+      const fallbackFile = resolveSlackFilePlaceholder(message.files) ?? "";
       const pendingBody = pendingText || fallbackFile;
       if (pendingBody) {
         recordPendingHistoryEntry({
@@ -313,13 +313,80 @@ export async function prepareSlackMessage(params: {
     return null;
   }
 
-  const media = await resolveSlackMedia({
+  const roomLabel = channelName ? `#${channelName}` : `#${message.channel}`;
+  const envelopeOptions = resolveEnvelopeFormatOptions(ctx.cfg);
+
+  const mediaList = await resolveSlackMediaList({
     files: message.files,
     token: ctx.botToken,
     maxBytes: ctx.mediaMaxBytes,
   });
-  const rawBody = (message.text ?? "").trim() || media?.placeholder || "";
+  const messageFilePlaceholder = resolveSlackFilePlaceholder(message.files);
+
+  let threadStarter: Awaited<ReturnType<typeof resolveSlackThreadStarter>> = null;
+  let threadStarterBody: string | undefined;
+  let threadLabel: string | undefined;
+  let threadStarterMediaList: Awaited<ReturnType<typeof resolveSlackMediaList>> = [];
+  if (isThreadReply && threadTs) {
+    threadStarter = await resolveSlackThreadStarter({
+      channelId: message.channel,
+      threadTs,
+      client: ctx.app.client,
+    });
+    if (threadStarter?.text) {
+      const starterUser = threadStarter.userId
+        ? await ctx.resolveUserName(threadStarter.userId)
+        : null;
+      const starterName = starterUser?.name ?? threadStarter.userId ?? "Unknown";
+      const starterWithId = `${threadStarter.text}\n[slack message id: ${
+        threadStarter.ts ?? threadTs
+      } channel: ${message.channel}]`;
+      threadStarterBody = formatThreadStarterEnvelope({
+        channel: "Slack",
+        author: starterName,
+        timestamp: threadStarter.ts ? Math.round(Number(threadStarter.ts) * 1000) : undefined,
+        body: starterWithId,
+        envelope: envelopeOptions,
+      });
+      const snippet = threadStarter.text.replace(/\s+/g, " ").slice(0, 80);
+      threadLabel = `Slack thread ${roomLabel}${snippet ? `: ${snippet}` : ""}`;
+    } else {
+      threadLabel = `Slack thread ${roomLabel}`;
+    }
+
+    if (!message.files?.length && threadStarter?.files?.length) {
+      threadStarterMediaList = await resolveSlackMediaList({
+        files: threadStarter.files,
+        token: ctx.botToken,
+        maxBytes: ctx.mediaMaxBytes,
+      });
+      if (threadStarterMediaList.length > 0) {
+        logVerbose(
+          `slack: hydrated thread starter files (${threadStarterMediaList.length}) from root message`,
+        );
+      }
+    }
+  }
+
+  const threadStarterFilePlaceholder =
+    !message.files?.length && threadStarter?.files?.length
+      ? resolveSlackFilePlaceholder(threadStarter.files)
+      : undefined;
+
+  const effectiveMediaList = mediaList.length > 0 ? mediaList : threadStarterMediaList;
+  const effectiveMedia = effectiveMediaList[0];
+
+  const rawBody =
+    (message.text ?? "").trim() ||
+    messageFilePlaceholder ||
+    threadStarterFilePlaceholder ||
+    effectiveMedia?.placeholder ||
+    "";
   if (!rawBody) return null;
+  const mediaPaths = effectiveMediaList.map((entry) => entry.path);
+  const mediaTypes = effectiveMediaList
+    .map((entry) => entry.contentType)
+    .filter(Boolean) as string[];
 
   const ackReaction = resolveAckReaction(cfg, route.agentId);
   const ackReactionValue = ackReaction ?? "";
@@ -353,7 +420,6 @@ export async function prepareSlackMessage(params: {
         )
       : null;
 
-  const roomLabel = channelName ? `#${channelName}` : `#${message.channel}`;
   const preview = rawBody.replace(/\s+/g, " ").slice(0, 160);
   const inboundLabel = isDirectMessage
     ? `Slack DM from ${senderName}`
@@ -380,7 +446,6 @@ export async function prepareSlackMessage(params: {
   const storePath = resolveStorePath(ctx.cfg.session?.store, {
     agentId: route.agentId,
   });
-  const envelopeOptions = resolveEnvelopeFormatOptions(ctx.cfg);
   const previousTimestamp = readSessionUpdatedAt({
     storePath,
     sessionKey: route.sessionKey,
@@ -431,33 +496,6 @@ export async function prepareSlackMessage(params: {
   ].filter((entry): entry is string => Boolean(entry));
   const groupSystemPrompt =
     systemPromptParts.length > 0 ? systemPromptParts.join("\n\n") : undefined;
-
-  let threadStarterBody: string | undefined;
-  let threadLabel: string | undefined;
-  if (isThreadReply && threadTs) {
-    const starter = await resolveSlackThreadStarter({
-      channelId: message.channel,
-      threadTs,
-      client: ctx.app.client,
-    });
-    if (starter?.text) {
-      const starterUser = starter.userId ? await ctx.resolveUserName(starter.userId) : null;
-      const starterName = starterUser?.name ?? starter.userId ?? "Unknown";
-      const starterWithId = `${starter.text}\n[slack message id: ${starter.ts ?? threadTs} channel: ${message.channel}]`;
-      threadStarterBody = formatThreadStarterEnvelope({
-        channel: "Slack",
-        author: starterName,
-        timestamp: starter.ts ? Math.round(Number(starter.ts) * 1000) : undefined,
-        body: starterWithId,
-        envelope: envelopeOptions,
-      });
-      const snippet = starter.text.replace(/\s+/g, " ").slice(0, 80);
-      threadLabel = `Slack thread ${roomLabel}${snippet ? `: ${snippet}` : ""}`;
-    } else {
-      threadLabel = `Slack thread ${roomLabel}`;
-    }
-  }
-
   const ctxPayload = finalizeInboundContext({
     Body: combinedBody,
     RawBody: rawBody,
@@ -483,9 +521,12 @@ export async function prepareSlackMessage(params: {
     ThreadLabel: threadLabel,
     Timestamp: message.ts ? Math.round(Number(message.ts) * 1000) : undefined,
     WasMentioned: isRoomish ? effectiveWasMentioned : undefined,
-    MediaPath: media?.path,
-    MediaType: media?.contentType,
-    MediaUrl: media?.path,
+    MediaPath: effectiveMedia?.path,
+    MediaType: effectiveMedia?.contentType,
+    MediaUrl: effectiveMedia?.path,
+    MediaPaths: mediaPaths.length > 0 ? mediaPaths : undefined,
+    MediaUrls: mediaPaths.length > 0 ? mediaPaths : undefined,
+    MediaTypes: mediaTypes.length > 0 ? mediaTypes : undefined,
     CommandAuthorized: commandAuthorized,
     OriginatingChannel: "slack" as const,
     OriginatingTo: slackTo,
