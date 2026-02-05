@@ -629,11 +629,9 @@ export async function runEmbeddedAttempt(
         });
       };
 
-      let responseStarted = false;
       let responseStartedAt: number | null = null;
       const handleAssistantMessageStart = () => {
-        if (!responseStarted) {
-          responseStarted = true;
+        if (responseStartedAt === null) {
           responseStartedAt = Date.now();
           void emitInternalAgentHook("response:start", {
             sessionId: params.sessionId,
