@@ -142,7 +142,7 @@ export function wrapToolWithBeforeToolCallHook(
 	return {
 		...tool,
 		execute: async (toolCallId, params, signal, onUpdate) => {
-			// TODO(opik): Prefer real toolCallId once all tool sources supply it consistently.
+			// TODO(hooks): Prefer real toolCallId once all tool sources supply it consistently.
 			const hookToolCallId =
 				typeof toolCallId === "string" && toolCallId.trim() ? toolCallId : `hook-${randomUUID()}`;
 			const startedAt = Date.now();
