@@ -14,6 +14,11 @@ jobs:
     outputs:
       run_expensive: ${{ steps.filter.outputs.run_expensive }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Detect changed paths
         id: filter
         uses: dorny/paths-filter@v3
@@ -288,7 +293,7 @@ jobs:
     needs:
       - checks-full
       - changes
-    if: needs.changes.outputs.run_expensive == 'true'
+    if: ${{ always() && needs.changes.outputs.run_expensive == 'true' && needs.checks-full.result == 'success' }}
     runs-on: blacksmith-4vcpu-windows-2025
     env:
       NODE_OPTIONS: --max-old-space-size=4096
@@ -380,7 +385,7 @@ jobs:
     needs:
       - checks-full
       - changes
-    if: github.event_name == 'pull_request' && needs.changes.outputs.run_expensive == 'true'
+    if: ${{ always() && github.event_name == 'pull_request' && needs.changes.outputs.run_expensive == 'true' && needs.checks-full.result == 'success' }}
     runs-on: macos-latest
     strategy:
       fail-fast: false
@@ -455,7 +460,7 @@ jobs:
     needs:
       - checks-full
       - changes
-    if: github.event_name == 'pull_request' && needs.changes.outputs.run_expensive == 'true'
+    if: ${{ always() && github.event_name == 'pull_request' && needs.changes.outputs.run_expensive == 'true' && needs.checks-full.result == 'success' }}
     runs-on: macos-latest
     strategy:
       fail-fast: false
@@ -700,7 +705,7 @@ jobs:
     needs:
       - checks-full
       - changes
-    if: needs.changes.outputs.run_expensive == 'true'
+    if: ${{ always() && needs.changes.outputs.run_expensive == 'true' && needs.checks-full.result == 'success' }}
     runs-on: blacksmith-4vcpu-ubuntu-2404
     strategy:
       fail-fast: false
