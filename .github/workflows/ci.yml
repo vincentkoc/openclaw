@@ -12,7 +12,7 @@ jobs:
   changes:
     runs-on: ubuntu-latest
     outputs:
-      run_expensive: ${{ steps.filter.outputs.run_expensive }}
+      run_expensive: ${{ steps.resolve.outputs.run_expensive }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -41,6 +41,16 @@ jobs:
               - "Dockerfile"
               - "docker-compose.yml"
               - "patches/**"
+
+      - name: Resolve expensive-check gate
+        id: resolve
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "run_expensive=${{ steps.filter.outputs.run_expensive }}" >> "$GITHUB_OUTPUT"
+          else
+            # Push/release builds should not risk under-testing due to diff-base ambiguity.
+            echo "run_expensive=true" >> "$GITHUB_OUTPUT"
+          fi
 
   install-check:
     runs-on: blacksmith-4vcpu-ubuntu-2404
