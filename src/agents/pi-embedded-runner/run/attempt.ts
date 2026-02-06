@@ -896,7 +896,7 @@ export async function runEmbeddedAttempt(
           didSendViaMessagingTool() ||
           getMessagingToolSentTexts().length > 0;
         if (hasResponseOutput) {
-          await emitResponseStart(promptStartedAt);
+          await emitResponseStart(Date.now());
         }
         if (responseStartedAt !== null) {
           await emitInternalAgentHook("response:end", {

@@ -164,7 +164,7 @@ describe("dispatchReplyFromConfig", () => {
     expect(dispatcher.sendFinalReply).toHaveBeenCalledTimes(1);
   });
 
-  it("does not provide onToolResult in group sessions", async () => {
+  it("provides onToolResult in group sessions", async () => {
     mocks.tryFastAbortFromMessage.mockResolvedValue({
       handled: false,
       aborted: false,
@@ -181,7 +181,8 @@ describe("dispatchReplyFromConfig", () => {
       opts: GetReplyOptions | undefined,
       _cfg: OpenClawConfig,
     ) => {
-      expect(opts?.onToolResult).toBeUndefined();
+      expect(opts?.onToolResult).toBeDefined();
+      expect(typeof opts?.onToolResult).toBe("function");
       return { text: "hi" } satisfies ReplyPayload;
     };
 
@@ -218,7 +219,7 @@ describe("dispatchReplyFromConfig", () => {
     expect(dispatcher.sendFinalReply).toHaveBeenCalledTimes(1);
   });
 
-  it("does not provide onToolResult for native slash commands", async () => {
+  it("provides onToolResult for native slash commands", async () => {
     mocks.tryFastAbortFromMessage.mockResolvedValue({
       handled: false,
       aborted: false,
@@ -236,7 +237,8 @@ describe("dispatchReplyFromConfig", () => {
       opts: GetReplyOptions | undefined,
       _cfg: OpenClawConfig,
     ) => {
-      expect(opts?.onToolResult).toBeUndefined();
+      expect(opts?.onToolResult).toBeDefined();
+      expect(typeof opts?.onToolResult).toBe("function");
       return { text: "hi" } satisfies ReplyPayload;
     };
 

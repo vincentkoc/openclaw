@@ -429,14 +429,15 @@ export async function deliverOutboundPayloads(params: {
       for (const url of payloadSummary.mediaUrls) {
         throwIfAborted(abortSignal);
         const caption = first ? payloadSummary.text : "";
-        attemptedSendContent = caption;
+        const messageSentContent = payloadSummary.text || caption;
+        attemptedSendContent = messageSentContent;
         first = false;
         if (isSignalChannel) {
           results.push(await sendSignalMedia(caption, url));
-          await runMessageSentHook(caption, true);
+          await runMessageSentHook(messageSentContent, true);
         } else {
           results.push(await handler.sendMedia(caption, url));
-          await runMessageSentHook(caption, true);
+          await runMessageSentHook(messageSentContent, true);
         }
       }
     } catch (err) {
