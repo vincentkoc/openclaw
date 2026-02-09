@@ -236,7 +236,7 @@ Triggered when agent commands are issued:
 
 ### Gateway Events
 
-Triggered when the gateway starts:
+Gateway lifecycle events:
 
 - **`gateway:startup`**: After channels start and hooks are loaded
 - **`gateway:shutdown`**: When the gateway begins shutting down
