@@ -404,8 +404,13 @@ async function deliverOutboundPayloadsCore(params: {
   const sendTextChunks = async (text: string) => {
     throwIfAborted(abortSignal);
     if (!handler.chunker || textLimit === undefined) {
-      results.push(await handler.sendText(text));
-      await runMessageSentHook(text, true);
+      const hookResult = await runMessageSendingHook(text);
+      if (hookResult.canceled) {
+        await runMessageSentHook(text, false, "canceled by message_sending hook");
+        return;
+      }
+      results.push(await handler.sendText(hookResult.content));
+      await runMessageSentHook(hookResult.content, true);
       return;
     }
     if (chunkMode === "newline") {
@@ -425,8 +430,13 @@ async function deliverOutboundPayloadsCore(params: {
         }
         for (const chunk of chunks) {
           throwIfAborted(abortSignal);
-          results.push(await handler.sendText(chunk));
-          await runMessageSentHook(chunk, true);
+          const hookResult = await runMessageSendingHook(chunk);
+          if (hookResult.canceled) {
+            await runMessageSentHook(chunk, false, "canceled by message_sending hook");
+            continue;
+          }
+          results.push(await handler.sendText(hookResult.content));
+          await runMessageSentHook(hookResult.content, true);
         }
       }
       return;
@@ -434,8 +444,13 @@ async function deliverOutboundPayloadsCore(params: {
     const chunks = handler.chunker(text, textLimit);
     for (const chunk of chunks) {
       throwIfAborted(abortSignal);
-      results.push(await handler.sendText(chunk));
-      await runMessageSentHook(chunk, true);
+      const hookResult = await runMessageSendingHook(chunk);
+      if (hookResult.canceled) {
+        await runMessageSentHook(chunk, false, "canceled by message_sending hook");
+        continue;
+      }
+      results.push(await handler.sendText(hookResult.content));
+      await runMessageSentHook(hookResult.content, true);
     }
   };
 
@@ -465,8 +480,25 @@ async function deliverOutboundPayloadsCore(params: {
     }
     for (const chunk of signalChunks) {
       throwIfAborted(abortSignal);
-      results.push(await sendSignalText(chunk.text, chunk.styles));
-      await runMessageSentHook(chunk.text, true);
+      const hookResult = await runMessageSendingHook(chunk.text);
+      if (hookResult.canceled) {
+        await runMessageSentHook(chunk.text, false, "canceled by message_sending hook");
+        continue;
+      }
+      let sendTextValue = hookResult.content;
+      let sendStyles = chunk.styles;
+      if (hookResult.content !== chunk.text) {
+        const formatted = markdownToSignalTextChunks(hookResult.content, Number.POSITIVE_INFINITY, {
+          tableMode: signalTableMode,
+        })[0] ?? {
+          text: hookResult.content,
+          styles: [],
+        };
+        sendTextValue = formatted.text;
+        sendStyles = formatted.styles;
+      }
+      results.push(await sendSignalText(sendTextValue, sendStyles));
+      await runMessageSentHook(sendTextValue, true);
     }
   };
 
@@ -524,16 +556,16 @@ async function deliverOutboundPayloadsCore(params: {
     let attemptedSendContent = payloadSummary.text;
     try {
       throwIfAborted(abortSignal);
-      const hookResult = await runMessageSendingHook(payloadSummary.text);
-      if (hookResult.canceled) {
-        await runMessageSentHook(payloadSummary.text, false, "canceled by message_sending hook");
-        continue;
-      }
-      payloadSummary.text = hookResult.content;
-      payload.text = hookResult.content;
-      attemptedSendContent = payloadSummary.text;
       params.onPayload?.(payloadSummary);
       if (handler.sendPayload && payload.channelData) {
+        const hookResult = await runMessageSendingHook(payloadSummary.text);
+        if (hookResult.canceled) {
+          await runMessageSentHook(payloadSummary.text, false, "canceled by message_sending hook");
+          continue;
+        }
+        payloadSummary.text = hookResult.content;
+        payload.text = hookResult.content;
+        attemptedSendContent = payloadSummary.text;
         const result = await handler.sendPayload(payload);
         results.push(result);
         await runMessageSentHook(payloadSummary.text, true);
@@ -548,6 +580,14 @@ async function deliverOutboundPayloadsCore(params: {
         continue;
       }
 
+      const hookResult = await runMessageSendingHook(payloadSummary.text);
+      if (hookResult.canceled) {
+        await runMessageSentHook(payloadSummary.text, false, "canceled by message_sending hook");
+        continue;
+      }
+      payloadSummary.text = hookResult.content;
+      payload.text = hookResult.content;
+      attemptedSendContent = payloadSummary.text;
       let first = true;
       for (const url of payloadSummary.mediaUrls) {
         throwIfAborted(abortSignal);

@@ -195,6 +195,69 @@ describe("deliverOutboundPayloads", () => {
     expect(results.map((r) => r.messageId)).toEqual(["w1", "w2"]);
   });
 
+  it("runs message_sending per text chunk and honors cancel", async () => {
+    const sendWhatsApp = vi.fn().mockResolvedValue({ messageId: "w1", toJid: "jid" });
+    const runMessageSending = vi
+      .fn()
+      .mockResolvedValueOnce({ content: "AB" })
+      .mockResolvedValueOnce({ cancel: true });
+    const runMessageSent = vi.fn().mockResolvedValue(undefined);
+    const getGlobalHookRunnerSpy = vi
+      .spyOn(hookRunnerGlobal, "getGlobalHookRunner")
+      .mockReturnValue({
+        hasHooks: (name: string) => name === "message_sending" || name === "message_sent",
+        runMessageSending,
+        runMessageSent,
+      } as unknown as PluginHookRunner);
+    const cfg: OpenClawConfig = {
+      channels: { whatsapp: { textChunkLimit: 2 } },
+    };
+
+    const results = await deliverOutboundPayloads({
+      cfg,
+      channel: "whatsapp",
+      to: "+1555",
+      payloads: [{ text: "abcd" }],
+      deps: { sendWhatsApp },
+    });
+
+    expect(runMessageSending).toHaveBeenCalledTimes(2);
+    expect(runMessageSending).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ content: "ab" }),
+      expect.any(Object),
+    );
+    expect(runMessageSending).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ content: "cd" }),
+      expect.any(Object),
+    );
+    expect(sendWhatsApp).toHaveBeenCalledTimes(1);
+    expect(sendWhatsApp).toHaveBeenCalledWith(
+      "+1555",
+      "AB",
+      expect.objectContaining({ verbose: false }),
+    );
+    expect(runMessageSent).toHaveBeenCalledTimes(2);
+    expect(runMessageSent).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ content: "AB", success: true }),
+      expect.any(Object),
+    );
+    expect(runMessageSent).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        content: "cd",
+        success: false,
+        error: "canceled by message_sending hook",
+      }),
+      expect.any(Object),
+    );
+    expect(results).toHaveLength(1);
+
+    getGlobalHookRunnerSpy.mockRestore();
+  });
+
   it("respects newline chunk mode for WhatsApp", async () => {
     const sendWhatsApp = vi.fn().mockResolvedValue({ messageId: "w1", toJid: "jid" });
     const cfg: OpenClawConfig = {
