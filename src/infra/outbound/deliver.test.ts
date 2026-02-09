@@ -215,6 +215,43 @@ describe("deliverOutboundPayloads", () => {
     getGlobalHookRunnerSpy.mockRestore();
   });
 
+  it("reports failed Signal chunk sends with the exact chunk content", async () => {
+    const sendSignal = vi.fn().mockRejectedValue(new Error("signal down"));
+    const runMessageSending = vi.fn().mockResolvedValue({ content: "AB" });
+    const runMessageSent = vi.fn().mockResolvedValue(undefined);
+    const getGlobalHookRunnerSpy = vi
+      .spyOn(hookRunnerGlobal, "getGlobalHookRunner")
+      .mockReturnValue({
+        hasHooks: (name: string) => name === "message_sending" || name === "message_sent",
+        runMessageSending,
+        runMessageSent,
+      } as unknown as PluginHookRunner);
+
+    await deliverOutboundPayloads({
+      cfg: { channels: { signal: { textChunkLimit: 2 } } },
+      channel: "signal",
+      to: "+1555",
+      payloads: [{ text: "abcd" }],
+      deps: { sendSignal },
+      bestEffort: true,
+    });
+
+    expect(runMessageSending).toHaveBeenCalledTimes(1);
+    expect(sendSignal).toHaveBeenCalledTimes(1);
+    expect(runMessageSent).toHaveBeenCalledTimes(1);
+    expect(runMessageSent).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        content: "AB",
+        success: false,
+        error: "signal down",
+      }),
+      expect.any(Object),
+    );
+
+    getGlobalHookRunnerSpy.mockRestore();
+  });
+
   it("chunks WhatsApp text and returns all results", async () => {
     const sendWhatsApp = vi
       .fn()
