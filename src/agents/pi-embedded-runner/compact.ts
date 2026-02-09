@@ -355,6 +355,7 @@ export async function compactEmbeddedPiSessionDirect(
     });
 
     const sessionLabel = params.sessionKey ?? params.sessionId;
+    const resolvedMessageProvider = params.messageChannel ?? params.messageProvider;
     const { contextFiles } = await resolveBootstrapContextForRun({
       workspaceDir: effectiveWorkspace,
       config: params.config,
@@ -368,7 +369,7 @@ export async function compactEmbeddedPiSessionDirect(
         elevated: params.bashElevated,
       },
       sandbox,
-      messageProvider: params.messageChannel ?? params.messageProvider,
+      messageProvider: resolvedMessageProvider,
       agentAccountId: params.agentAccountId,
       sessionKey: params.sessionKey ?? params.sessionId,
       groupId: params.groupId,
@@ -577,7 +578,9 @@ export async function compactEmbeddedPiSessionDirect(
         // Keep compaction hooks aligned with the validated transcript that actually enters
         // truncation/repair and compaction.
         session.agent.replaceMessages(validated);
-        const originalMessages = session.messages.slice();
+        // "Original" compaction metrics should describe the validated transcript that enters
+        // limiting/compaction, not the raw on-disk session snapshot.
+        const originalMessages = validated.slice();
         const truncated = limitHistoryTurns(
           session.messages,
           getDmHistoryLimitFromSessionKey(params.sessionKey, params.config),
@@ -643,7 +646,7 @@ export async function compactEmbeddedPiSessionDirect(
                 agentId: sessionAgentId,
                 sessionKey: hookSessionKey,
                 workspaceDir: effectiveWorkspace,
-                messageProvider: params.messageProvider,
+                messageProvider: resolvedMessageProvider,
               },
             );
           } catch (err) {
@@ -738,7 +741,7 @@ export async function compactEmbeddedPiSessionDirect(
                 agentId: sessionAgentId,
                 sessionKey: hookSessionKey,
                 workspaceDir: effectiveWorkspace,
-                messageProvider: params.messageProvider,
+                messageProvider: resolvedMessageProvider,
               },
             );
           } catch (err) {
