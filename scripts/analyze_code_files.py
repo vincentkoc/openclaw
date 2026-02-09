@@ -5,6 +5,9 @@ Threshold can be set to warn about files longer or shorter than a certain number
 
 CI mode (--compare-to): Only warns about files that grew past threshold compared to a base ref.
 Use --strict to exit non-zero on violations for CI gating.
+
+GitHub Actions: when GITHUB_ACTIONS=true, emits ::error annotations on flagged files
+and writes a Markdown job summary to $GITHUB_STEP_SUMMARY (if set).
 """
 
 import os
@@ -40,33 +43,20 @@ SKIP_SHORT_PATTERNS = {
 }
 SKIP_SHORT_SUFFIXES = ('-cli.ts',)
 
-# Function names to skip in duplicate detection (common utilities, test helpers)
+# Function names to skip in duplicate detection.
+# Only list names so generic they're expected to appear independently in many modules.
+# Do NOT use prefix-based skipping — it hides real duplication (e.g. formatDuration,
+# stripPrefix, parseConfig are specific enough to flag).
 SKIP_DUPLICATE_FUNCTIONS = {
-    # Common utility names
+    # Lifecycle / framework plumbing
     'main', 'init', 'setup', 'teardown', 'cleanup', 'dispose', 'destroy',
     'open', 'close', 'connect', 'disconnect', 'execute', 'run', 'start', 'stop',
     'render', 'update', 'refresh', 'reset', 'clear', 'flush',
+    # Too-short / too-generic identifiers
+    'text', 'json', 'pad', 'mask', 'digest', 'confirm', 'intro', 'outro',
+    'exists', 'send', 'receive', 'listen', 'log', 'warn', 'error', 'info',
+    'help', 'version', 'config', 'configure', 'describe', 'test', 'action',
 }
-
-SKIP_DUPLICATE_PREFIXES = (
-    # Transformers
-    'normalize', 'parse', 'validate', 'serialize', 'deserialize',
-    'convert', 'transform', 'extract', 'encode', 'decode',
-    # Predicates
-    'is', 'has', 'can', 'should', 'will',
-    # Constructors/factories
-    'create', 'make', 'build', 'generate', 'new',
-    # Accessors
-    'get', 'set', 'read', 'write', 'load', 'save', 'fetch',
-    # Handlers
-    'handle', 'on', 'emit',
-    # Modifiers
-    'add', 'remove', 'delete', 'update', 'insert', 'append',
-    # Other common
-    'to', 'from', 'with', 'apply', 'process', 'resolve', 'ensure', 'check',
-    'filter', 'map', 'reduce', 'merge', 'split', 'join', 'find', 'search',
-    'register', 'unregister', 'subscribe', 'unsubscribe',
-)
 SKIP_DUPLICATE_FILE_PATTERNS = ('.test.ts', '.test.tsx', '.spec.ts')
 
 # Known packages in the monorepo
@@ -150,12 +140,33 @@ def find_duplicate_functions(files: List[Tuple[Path, int]], root_dir: Path) -> D
             # Skip known common function names
             if func in SKIP_DUPLICATE_FUNCTIONS:
                 continue
-            if any(func.startswith(prefix) for prefix in SKIP_DUPLICATE_PREFIXES):
-                continue
             function_locations[func].append(file_path)
     
-    # Filter to only duplicates
-    return {name: paths for name, paths in function_locations.items() if len(paths) > 1}
+    # Filter to only duplicates, ignoring cross-extension duplicates.
+    # Extensions are independent packages — the same function name in
+    # extensions/telegram and extensions/discord is expected, not duplication.
+    result: Dict[str, List[Path]] = {}
+    for name, paths in function_locations.items():
+        if len(paths) < 2:
+            continue
+        # If ALL instances are in different extensions, skip
+        ext_dirs = set()
+        non_ext = False
+        for p in paths:
+            try:
+                rel = p.relative_to(root_dir)
+                parts = rel.parts
+                if len(parts) >= 2 and parts[0] == 'extensions':
+                    ext_dirs.add(parts[1])
+                else:
+                    non_ext = True
+            except ValueError:
+                non_ext = True
+        # Skip if every instance lives in a different extension (no core overlap)
+        if not non_ext and len(ext_dirs) == len(paths):
+            continue
+        result[name] = paths
+    return result
 
 
 def validate_git_ref(root_dir: Path, ref: str) -> bool:
@@ -285,8 +296,6 @@ def find_duplicate_regressions(
         for func in functions:
             if func in SKIP_DUPLICATE_FUNCTIONS:
                 continue
-            if any(func.startswith(prefix) for prefix in SKIP_DUPLICATE_PREFIXES):
-                continue
             base_function_locations[func].append(file_path)
 
     base_dupes = {name for name, paths in base_function_locations.items() if len(paths) > 1}
@@ -324,6 +333,64 @@ def find_threshold_regressions(
             grew.append((file_path, current_lines, base_lines))
     
     return crossed, grew
+
+
+def _write_github_summary(
+    summary_path: str,
+    crossed: List[Tuple[Path, int, Optional[int]]],
+    grew: List[Tuple[Path, int, int]],
+    new_dupes: Dict[str, List[Path]],
+    root_dir: Path,
+    threshold: int,
+    compare_ref: str,
+) -> None:
+    """Write a Markdown job summary to $GITHUB_STEP_SUMMARY."""
+    lines: List[str] = []
+    lines.append("## Code Size Check Failed\n")
+
+    if crossed:
+        lines.append(f"### {len(crossed)} file(s) crossed the {threshold}-line threshold\n")
+        lines.append("| File | Before | After | Delta |")
+        lines.append("|------|-------:|------:|------:|")
+        for file_path, current, base in crossed:
+            rel = str(file_path.relative_to(root_dir)).replace('\\', '/')
+            before = f"{base:,}" if base is not None else "new"
+            lines.append(f"| `{rel}` | {before} | {current:,} | +{current - (base or 0):,} |")
+        lines.append("")
+
+    if grew:
+        lines.append(f"### {len(grew)} already-large file(s) grew larger\n")
+        lines.append("| File | Before | After | Delta |")
+        lines.append("|------|-------:|------:|------:|")
+        for file_path, current, base in grew:
+            rel = str(file_path.relative_to(root_dir)).replace('\\', '/')
+            lines.append(f"| `{rel}` | {base:,} | {current:,} | +{current - base:,} |")
+        lines.append("")
+
+    if new_dupes:
+        lines.append(f"### {len(new_dupes)} new duplicate function name(s)\n")
+        lines.append("| Function | Files |")
+        lines.append("|----------|-------|")
+        for func_name in sorted(new_dupes.keys()):
+            paths = new_dupes[func_name]
+            file_list = ", ".join(f"`{str(p.relative_to(root_dir)).replace(chr(92), '/')}`" for p in paths)
+            lines.append(f"| `{func_name}` | {file_list} |")
+        lines.append("")
+
+    lines.append("<details><summary>How to fix</summary>\n")
+    lines.append("- Split large files into smaller, focused modules")
+    lines.append("- Extract helpers, types, or constants into separate files")
+    lines.append("- See `AGENTS.md` for guidelines (~500–700 LOC target)")
+    lines.append(f"- This check compares your PR against `{compare_ref}`")
+    lines.append(f"- Only code files are checked: {', '.join(f'`{e}`' for e in sorted(CODE_EXTENSIONS))}")
+    lines.append("- Docs, test names, and config files are **not** affected")
+    lines.append("\n</details>")
+
+    try:
+        with open(summary_path, 'a', encoding='utf-8') as f:
+            f.write('\n'.join(lines) + '\n')
+    except Exception as e:
+        print(f"⚠️  Failed to write job summary: {e}", file=sys.stderr)
 
 
 def main():
@@ -432,7 +499,50 @@ def main():
 
         print()
         if args.strict and violations:
+            # Emit GitHub Actions file annotations so violations appear inline in the PR diff
+            in_gha = os.environ.get('GITHUB_ACTIONS') == 'true'
+            if in_gha:
+                for file_path, current, base in crossed:
+                    rel = str(file_path.relative_to(root_dir)).replace('\\', '/')
+                    if base is None:
+                        print(f"::error file={rel},title=File over {args.threshold} lines::{rel} is {current:,} lines (new file). Split into smaller modules.")
+                    else:
+                        print(f"::error file={rel},title=File crossed {args.threshold} lines::{rel} grew from {base:,} to {current:,} lines (+{current - base:,}). Split into smaller modules.")
+                for file_path, current, base in grew:
+                    rel = str(file_path.relative_to(root_dir)).replace('\\', '/')
+                    print(f"::error file={rel},title=Large file grew larger::{rel} is already {base:,} lines and grew to {current:,} (+{current - base:,}). Consider refactoring.")
+                for func_name in sorted(new_dupes.keys()):
+                    for p in new_dupes[func_name]:
+                        rel = str(p.relative_to(root_dir)).replace('\\', '/')
+                        print(f"::error file={rel},title=Duplicate function '{func_name}'::Function '{func_name}' appears in multiple files. Centralize or rename.")
+
+            # Write GitHub Actions job summary (visible in the Actions check details)
+            summary_path = os.environ.get('GITHUB_STEP_SUMMARY')
+            if summary_path:
+                _write_github_summary(summary_path, crossed, grew, new_dupes, root_dir, args.threshold, args.compare_to)
+
+            # Print actionable summary so contributors know what to do
+            print("─" * 60)
+            print("❌ Code size check failed\n")
+            if crossed:
+                print(f"   {len(crossed)} file(s) grew past the {args.threshold}-line limit.")
+            if grew:
+                print(f"   {len(grew)} file(s) already over {args.threshold} lines got larger.")
+            print()
+            print("   How to fix:")
+            print("   • Split large files into smaller, focused modules")
+            print("   • Extract helpers, types, or constants into separate files")
+            print("   • See AGENTS.md for guidelines (~500-700 LOC target)")
+            print()
+            print(f"   This check compares your PR against {args.compare_to}.")
+            print(f"   Only code files are checked ({', '.join(sorted(e for e in CODE_EXTENSIONS))}).")
+            print("   Docs, tests names, and config files are not affected.")
+            print("─" * 60)
             sys.exit(1)
+        elif args.strict:
+            print("─" * 60)
+            print("✅ Code size check passed — no files exceed thresholds.")
+            print("─" * 60)
         
         return
     
