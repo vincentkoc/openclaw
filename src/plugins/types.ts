@@ -376,6 +376,8 @@ export type PluginHookMessageContext = {
   channelId: string;
   accountId?: string;
   conversationId?: string;
+  sessionKey?: string;
+  sessionId?: string;
 };
 
 // message_received hook
