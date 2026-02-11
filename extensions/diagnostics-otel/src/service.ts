@@ -24,7 +24,7 @@ function resolveOtelUrl(endpoint: string | undefined, path: string): string | un
     return undefined;
   }
   const endpointWithoutQueryOrFragment = endpoint.split(/[?#]/, 1)[0] ?? endpoint;
-  if (/\/v1\/(?:traces|metrics|logs)$/.test(endpointWithoutQueryOrFragment)) {
+  if (/\/v1\/(?:traces|metrics|logs)$/i.test(endpointWithoutQueryOrFragment)) {
     return endpoint;
   }
   return `${endpoint}/${path}`;
