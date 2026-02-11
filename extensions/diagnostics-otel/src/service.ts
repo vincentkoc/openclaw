@@ -23,7 +23,7 @@ function resolveOtelUrl(endpoint: string | undefined, path: string): string | un
   if (!endpoint) {
     return undefined;
   }
-  if (endpoint.includes("/v1/")) {
+  if (/\/v1\/(?:traces|metrics|logs)$/.test(endpoint)) {
     return endpoint;
   }
   return `${endpoint}/${path}`;
