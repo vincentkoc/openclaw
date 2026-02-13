@@ -2,37 +2,56 @@ import { clearActiveProgressLine } from "./progress-line.js";
 
 const RESET_SEQUENCE = "\x1b[0m\x1b[?25h\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?2004l";
 
+type RestoreTerminalStateOptions = {
+	/**
+	 * Resumes paused stdin after restoring terminal mode.
+	 * Keep this off when the process should exit immediately after cleanup.
+	 */
+	resumeStdin?: boolean;
+};
+
 function reportRestoreFailure(scope: string, err: unknown, reason?: string): void {
-  const suffix = reason ? ` (${reason})` : "";
-  const message = `[terminal] restore ${scope} failed${suffix}: ${String(err)}`;
-  try {
-    process.stderr.write(`${message}\n`);
-  } catch (writeErr) {
-    console.error(`[terminal] restore reporting failed${suffix}: ${String(writeErr)}`);
-  }
+	const suffix = reason ? ` (${reason})` : "";
+	const message = `[terminal] restore ${scope} failed${suffix}: ${String(err)}`;
+	try {
+		process.stderr.write(`${message}\n`);
+	} catch (writeErr) {
+		console.error(`[terminal] restore reporting failed${suffix}: ${String(writeErr)}`);
+	}
 }
 
-export function restoreTerminalState(reason?: string): void {
-  try {
-    clearActiveProgressLine();
-  } catch (err) {
-    reportRestoreFailure("progress line", err, reason);
-  }
+export function restoreTerminalState(
+	reason?: string,
+	options: RestoreTerminalStateOptions = {},
+): void {
+	const resumeStdin = options.resumeStdin ?? true;
+	try {
+		clearActiveProgressLine();
+	} catch (err) {
+		reportRestoreFailure("progress line", err, reason);
+	}
 
-  const stdin = process.stdin;
-  if (stdin.isTTY && typeof stdin.setRawMode === "function") {
-    try {
-      stdin.setRawMode(false);
-    } catch (err) {
-      reportRestoreFailure("raw mode", err, reason);
-    }
-  }
+	const stdin = process.stdin;
+	if (stdin.isTTY && typeof stdin.setRawMode === "function") {
+		try {
+			stdin.setRawMode(false);
+		} catch (err) {
+			reportRestoreFailure("raw mode", err, reason);
+		}
+		if (resumeStdin && typeof stdin.isPaused === "function" && stdin.isPaused()) {
+			try {
+				stdin.resume();
+			} catch (err) {
+				reportRestoreFailure("stdin resume", err, reason);
+			}
+		}
+	}
 
-  if (process.stdout.isTTY) {
-    try {
-      process.stdout.write(RESET_SEQUENCE);
-    } catch (err) {
-      reportRestoreFailure("stdout reset", err, reason);
-    }
-  }
+	if (process.stdout.isTTY) {
+		try {
+			process.stdout.write(RESET_SEQUENCE);
+		} catch (err) {
+			reportRestoreFailure("stdout reset", err, reason);
+		}
+	}
 }

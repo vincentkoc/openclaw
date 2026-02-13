@@ -1,61 +1,72 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RuntimeEnv } from "../runtime.js";
-
-const mocks = vi.hoisted(() => ({
-  createClackPrompter: vi.fn(),
-  runOnboardingWizard: vi.fn(),
-  restoreTerminalState: vi.fn(),
-}));
-
-vi.mock("../wizard/clack-prompter.js", () => ({
-  createClackPrompter: mocks.createClackPrompter,
-}));
-
-vi.mock("../wizard/onboarding.js", () => ({
-  runOnboardingWizard: mocks.runOnboardingWizard,
-}));
-
-vi.mock("../terminal/restore.js", () => ({
-  restoreTerminalState: mocks.restoreTerminalState,
-}));
-
 import { WizardCancelledError } from "../wizard/prompts.js";
 import { runInteractiveOnboarding } from "./onboard-interactive.js";
 
-const runtime: RuntimeEnv = {
-  log: vi.fn(),
-  error: vi.fn(),
-  exit: vi.fn(),
-};
+const mocks = vi.hoisted(() => ({
+	createClackPrompter: vi.fn(() => ({ id: "prompter" })),
+	runOnboardingWizard: vi.fn(async () => {}),
+	restoreTerminalState: vi.fn(),
+}));
+
+vi.mock("../wizard/clack-prompter.js", () => ({
+	createClackPrompter: mocks.createClackPrompter,
+}));
+
+vi.mock("../wizard/onboarding.js", () => ({
+	runOnboardingWizard: mocks.runOnboardingWizard,
+}));
+
+vi.mock("../terminal/restore.js", () => ({
+	restoreTerminalState: mocks.restoreTerminalState,
+}));
+
+function makeRuntime(): RuntimeEnv {
+	return {
+		log: vi.fn(),
+		error: vi.fn(),
+		exit: vi.fn() as unknown as RuntimeEnv["exit"],
+	};
+}
 
 describe("runInteractiveOnboarding", () => {
-  beforeEach(() => {
-    mocks.createClackPrompter.mockReset();
-    mocks.runOnboardingWizard.mockReset();
-    mocks.restoreTerminalState.mockReset();
-    runtime.log.mockClear();
-    runtime.error.mockClear();
-    runtime.exit.mockClear();
+	afterEach(() => {
+		vi.clearAllMocks();
+	});
 
-    mocks.createClackPrompter.mockReturnValue({});
-  });
+	it("restores terminal state without resuming stdin on success", async () => {
+		const runtime = makeRuntime();
 
-  it("exits with code 1 when the wizard is cancelled", async () => {
-    mocks.runOnboardingWizard.mockRejectedValue(new WizardCancelledError());
+		await runInteractiveOnboarding({} as never, runtime);
 
-    await runInteractiveOnboarding({} as never, runtime);
+		expect(mocks.runOnboardingWizard).toHaveBeenCalledOnce();
+		expect(mocks.restoreTerminalState).toHaveBeenCalledWith("onboarding finish", {
+			resumeStdin: false,
+		});
+	});
 
-    expect(runtime.exit).toHaveBeenCalledWith(1);
-    expect(mocks.restoreTerminalState).toHaveBeenCalledWith("onboarding finish");
-  });
+	it("restores terminal state without resuming stdin on cancel", async () => {
+		const exitError = new Error("exit");
+		const runtime: RuntimeEnv = {
+			log: vi.fn(),
+			error: vi.fn(),
+			exit: vi.fn(() => {
+				throw exitError;
+			}) as unknown as RuntimeEnv["exit"],
+		};
+		mocks.runOnboardingWizard.mockRejectedValueOnce(new WizardCancelledError("cancelled"));
 
-  it("rethrows non-cancel errors", async () => {
-    const err = new Error("boom");
-    mocks.runOnboardingWizard.mockRejectedValue(err);
+		await expect(runInteractiveOnboarding({} as never, runtime)).rejects.toBe(exitError);
 
-    await expect(runInteractiveOnboarding({} as never, runtime)).rejects.toThrow("boom");
-
-    expect(runtime.exit).not.toHaveBeenCalled();
-    expect(mocks.restoreTerminalState).toHaveBeenCalledWith("onboarding finish");
-  });
+		expect(runtime.exit).toHaveBeenCalledWith(0);
+		expect(mocks.restoreTerminalState).toHaveBeenCalledWith("onboarding finish", {
+			resumeStdin: false,
+		});
+		const restoreOrder =
+			mocks.restoreTerminalState.mock.invocationCallOrder[0] ?? Number.MAX_SAFE_INTEGER;
+		const exitOrder =
+			(runtime.exit as unknown as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0] ??
+			Number.MAX_SAFE_INTEGER;
+		expect(restoreOrder).toBeLessThan(exitOrder);
+	});
 });
