@@ -51,7 +51,7 @@ import {
 } from "./hooks.js";
 import { sendGatewayAuthFailure } from "./http-common.js";
 import { getBearerToken, getHeader } from "./http-utils.js";
-import { resolveGatewayClientIp } from "./net.js";
+import { isPrivateOrLoopbackAddress, resolveGatewayClientIp } from "./net.js";
 import { handleOpenAiHttpRequest } from "./openai-http.js";
 import { handleOpenResponsesHttpRequest } from "./openresponses-http.js";
 import { handleToolsInvokeHttpRequest } from "./tools-invoke-http.js";
@@ -143,6 +143,13 @@ async function authorizeCanvasRequest(params: {
   if (!clientIp) {
     return lastAuthFailure ?? { ok: false, reason: "unauthorized" };
   }
+
+  // IP-based fallback is only safe for machine-scoped addresses.
+  // Only allow IP-based fallback for private/loopback addresses to prevent
+  // cross-session access in shared-IP environments (corporate NAT, cloud).
+  if (!isPrivateOrLoopbackAddress(clientIp)) {
+    return lastAuthFailure ?? { ok: false, reason: "unauthorized" };
+  }
   if (hasAuthorizedWsClientForIp(clients, clientIp)) {
     return { ok: true };
   }
@@ -200,13 +207,34 @@ export function createHooksRequestHandler(
     nowMs: number,
   ): { throttled: boolean; retryAfterSeconds?: number } => {
     if (!hookAuthFailures.has(clientKey) && hookAuthFailures.size >= HOOK_AUTH_FAILURE_TRACK_MAX) {
-      hookAuthFailures.clear();
+      // Prune expired entries instead of clearing all state.
+      for (const [key, entry] of hookAuthFailures) {
+        if (nowMs - entry.windowStartedAtMs >= HOOK_AUTH_FAILURE_WINDOW_MS) {
+          hookAuthFailures.delete(key);
+        }
+      }
+      // If still at capacity after pruning, drop the oldest half.
+      if (hookAuthFailures.size >= HOOK_AUTH_FAILURE_TRACK_MAX) {
+        let toRemove = Math.floor(hookAuthFailures.size / 2);
+        for (const key of hookAuthFailures.keys()) {
+          if (toRemove <= 0) {
+            break;
+          }
+          hookAuthFailures.delete(key);
+          toRemove--;
+        }
+      }
     }
     const current = hookAuthFailures.get(clientKey);
     const expired = !current || nowMs - current.windowStartedAtMs >= HOOK_AUTH_FAILURE_WINDOW_MS;
     const next: HookAuthFailure = expired
       ? { count: 1, windowStartedAtMs: nowMs }
       : { count: current.count + 1, windowStartedAtMs: current.windowStartedAtMs };
+    // Delete-before-set refreshes Map insertion order so recently-active
+    // clients are not evicted before dormant ones during oldest-half eviction.
+    if (hookAuthFailures.has(clientKey)) {
+      hookAuthFailures.delete(clientKey);
+    }
     hookAuthFailures.set(clientKey, next);
     if (next.count <= HOOK_AUTH_FAILURE_LIMIT) {
       return { throttled: false };
@@ -280,7 +308,12 @@ export function createHooksRequestHandler(
 
     const body = await readJsonBody(req, hooksConfig.maxBodyBytes);
     if (!body.ok) {
-      const status = body.error === "payload too large" ? 413 : 400;
+      const status =
+        body.error === "payload too large"
+          ? 413
+          : body.error === "request body timeout"
+            ? 408
+            : 400;
       sendJson(res, status, { ok: false, error: body.error });
       return true;
     }
