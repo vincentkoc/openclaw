@@ -644,6 +644,7 @@ export async function compactEmbeddedPiSessionDirect(
                 tokenCount: tokenCountBefore,
               },
               {
+                sessionId: params.sessionId,
                 agentId: sessionAgentId,
                 sessionKey: hookSessionKey,
                 workspaceDir: effectiveWorkspace,
@@ -741,6 +742,7 @@ export async function compactEmbeddedPiSessionDirect(
                 compactedCount,
               },
               {
+                sessionId: params.sessionId,
                 agentId: sessionAgentId,
                 sessionKey: hookSessionKey,
                 workspaceDir: effectiveWorkspace,
