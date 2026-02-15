@@ -2,23 +2,42 @@ import { describe, expect, it } from "vitest";
 import { validateConfigObject } from "./config.js";
 
 describe("web search provider config", () => {
-  it("accepts perplexity provider and config", () => {
-    const res = validateConfigObject({
-      tools: {
-        web: {
-          search: {
-            enabled: true,
-            provider: "perplexity",
-            perplexity: {
-              apiKey: "test-key",
-              baseUrl: "https://api.perplexity.ai",
-              model: "perplexity/sonar-pro",
-            },
-          },
-        },
-      },
-    });
+	it("accepts perplexity provider and config", () => {
+		const res = validateConfigObject({
+			tools: {
+				web: {
+					search: {
+						enabled: true,
+						provider: "perplexity",
+						perplexity: {
+							apiKey: "test-key",
+							baseUrl: "https://api.perplexity.ai",
+							model: "perplexity/sonar-pro",
+						},
+					},
+				},
+			},
+		});
 
-    expect(res.ok).toBe(true);
-  });
+		expect(res.ok).toBe(true);
+	});
+
+	it("accepts tavily provider and config", () => {
+		const res = validateConfigObject({
+			tools: {
+				web: {
+					search: {
+						enabled: true,
+						provider: "tavily",
+						tavily: {
+							apiKey: "tvly-test-key",
+							baseUrl: "https://api.tavily.com",
+						},
+					},
+				},
+			},
+		});
+
+		expect(res.ok).toBe(true);
+	});
 });

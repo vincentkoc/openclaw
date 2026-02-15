@@ -1,8 +1,8 @@
 ---
-summary: "Web search + fetch tools (Brave Search API, Perplexity direct/OpenRouter)"
+summary: "Web search + fetch tools (Brave, Perplexity, Grok, Tavily)"
 read_when:
   - You want to enable web_search or web_fetch
-  - You need Brave Search API key setup
+  - You need search provider API key setup
   - You want to use Perplexity Sonar for web search
 title: "Web Tools"
 ---
@@ -11,7 +11,7 @@ title: "Web Tools"
 
 OpenClaw ships two lightweight web tools:
 
-- `web_search` — Search the web via Brave Search API (default) or Perplexity Sonar (direct or via OpenRouter).
+- `web_search` — Search the web via Brave Search API (default), Perplexity Sonar, Grok, or Tavily.
 - `web_fetch` — HTTP fetch + readable extraction (HTML → markdown/text).
 
 These are **not** browser automation. For JS-heavy sites or logins, use the
@@ -22,6 +22,8 @@ These are **not** browser automation. For JS-heavy sites or logins, use the
 - `web_search` calls your configured provider and returns results.
   - **Brave** (default): returns structured results (title, URL, snippet).
   - **Perplexity**: returns AI-synthesized answers with citations from real-time web search.
+  - **Grok**: returns AI-synthesized answers with citations from real-time web search.
+  - **Tavily**: returns structured results and may include a synthesized answer.
 - Results are cached by query for 15 minutes (configurable).
 - `web_fetch` does a plain HTTP GET and extracts readable content
   (HTML → markdown/text). It does **not** execute JavaScript.
@@ -33,6 +35,8 @@ These are **not** browser automation. For JS-heavy sites or logins, use the
 | ------------------- | -------------------------------------------- | ---------------------------------------- | -------------------------------------------- |
 | **Brave** (default) | Fast, structured results, free tier          | Traditional search results               | `BRAVE_API_KEY`                              |
 | **Perplexity**      | AI-synthesized answers, citations, real-time | Requires Perplexity or OpenRouter access | `OPENROUTER_API_KEY` or `PERPLEXITY_API_KEY` |
+| **Grok**            | AI-synthesized answers, citations            | Requires xAI access                      | `XAI_API_KEY`                                |
+| **Tavily**          | Agent-focused structured web search          | Requires Tavily account                  | `TAVILY_API_KEY`                             |
 
 See [Brave Search setup](/brave-search) and [Perplexity Sonar](/perplexity) for provider-specific details.
 
@@ -40,13 +44,13 @@ Set the provider in config:
 
 ```json5
 {
-  tools: {
-    web: {
-      search: {
-        provider: "brave", // or "perplexity"
-      },
-    },
-  },
+	tools: {
+		web: {
+			search: {
+				provider: "brave", // or "perplexity", "grok", "tavily"
+			},
+		},
+	},
 }
 ```
 
@@ -54,18 +58,18 @@ Example: switch to Perplexity Sonar (direct API):
 
 ```json5
 {
-  tools: {
-    web: {
-      search: {
-        provider: "perplexity",
-        perplexity: {
-          apiKey: "pplx-...",
-          baseUrl: "https://api.perplexity.ai",
-          model: "perplexity/sonar-pro",
-        },
-      },
-    },
-  },
+	tools: {
+		web: {
+			search: {
+				provider: "perplexity",
+				perplexity: {
+					apiKey: "pplx-...",
+					baseUrl: "https://api.perplexity.ai",
+					model: "perplexity/sonar-pro",
+				},
+			},
+		},
+	},
 }
 ```
 
@@ -103,22 +107,43 @@ crypto/prepaid).
 
 ```json5
 {
-  tools: {
-    web: {
-      search: {
-        enabled: true,
-        provider: "perplexity",
-        perplexity: {
-          // API key (optional if OPENROUTER_API_KEY or PERPLEXITY_API_KEY is set)
-          apiKey: "sk-or-v1-...",
-          // Base URL (key-aware default if omitted)
-          baseUrl: "https://openrouter.ai/api/v1",
-          // Model (defaults to perplexity/sonar-pro)
-          model: "perplexity/sonar-pro",
-        },
-      },
-    },
-  },
+	tools: {
+		web: {
+			search: {
+				enabled: true,
+				provider: "perplexity",
+				perplexity: {
+					// API key (optional if OPENROUTER_API_KEY or PERPLEXITY_API_KEY is set)
+					apiKey: "sk-or-v1-...",
+					// Base URL (key-aware default if omitted)
+					baseUrl: "https://openrouter.ai/api/v1",
+					// Model (defaults to perplexity/sonar-pro)
+					model: "perplexity/sonar-pro",
+				},
+			},
+		},
+	},
+}
+```
+
+### Setting up Tavily search
+
+```json5
+{
+	tools: {
+		web: {
+			search: {
+				enabled: true,
+				provider: "tavily",
+				tavily: {
+					// API key (optional if TAVILY_API_KEY is set)
+					apiKey: "tvly-...",
+					// Base URL (defaults to https://api.tavily.com)
+					baseUrl: "https://api.tavily.com",
+				},
+			},
+		},
+	},
 }
 ```
 
@@ -149,22 +174,24 @@ Search the web using your configured provider.
 - API key for your chosen provider:
   - **Brave**: `BRAVE_API_KEY` or `tools.web.search.apiKey`
   - **Perplexity**: `OPENROUTER_API_KEY`, `PERPLEXITY_API_KEY`, or `tools.web.search.perplexity.apiKey`
+  - **Grok**: `XAI_API_KEY` or `tools.web.search.grok.apiKey`
+  - **Tavily**: `TAVILY_API_KEY` or `tools.web.search.tavily.apiKey`
 
 ### Config
 
 ```json5
 {
-  tools: {
-    web: {
-      search: {
-        enabled: true,
-        apiKey: "BRAVE_API_KEY_HERE", // optional if BRAVE_API_KEY is set
-        maxResults: 5,
-        timeoutSeconds: 30,
-        cacheTtlMinutes: 15,
-      },
-    },
-  },
+	tools: {
+		web: {
+			search: {
+				enabled: true,
+				apiKey: "BRAVE_API_KEY_HERE", // optional if BRAVE_API_KEY is set
+				maxResults: 5,
+				timeoutSeconds: 30,
+				cacheTtlMinutes: 15,
+			},
+		},
+	},
 }
 ```
 
@@ -184,24 +211,24 @@ Search the web using your configured provider.
 ```javascript
 // German-specific search
 await web_search({
-  query: "TV online schauen",
-  count: 10,
-  country: "DE",
-  search_lang: "de",
+	query: "TV online schauen",
+	count: 10,
+	country: "DE",
+	search_lang: "de",
 });
 
 // French search with French UI
 await web_search({
-  query: "actualités",
-  country: "FR",
-  search_lang: "fr",
-  ui_lang: "fr",
+	query: "actualités",
+	country: "FR",
+	search_lang: "fr",
+	ui_lang: "fr",
 });
 
 // Recent results (past week)
 await web_search({
-  query: "TMBG interview",
-  freshness: "pw",
+	query: "TMBG interview",
+	freshness: "pw",
 });
 ```
 
@@ -218,28 +245,28 @@ Fetch a URL and extract readable content.
 
 ```json5
 {
-  tools: {
-    web: {
-      fetch: {
-        enabled: true,
-        maxChars: 50000,
-        maxCharsCap: 50000,
-        timeoutSeconds: 30,
-        cacheTtlMinutes: 15,
-        maxRedirects: 3,
-        userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        readability: true,
-        firecrawl: {
-          enabled: true,
-          apiKey: "FIRECRAWL_API_KEY_HERE", // optional if FIRECRAWL_API_KEY is set
-          baseUrl: "https://api.firecrawl.dev",
-          onlyMainContent: true,
-          maxAgeMs: 86400000, // ms (1 day)
-          timeoutSeconds: 60,
-        },
-      },
-    },
-  },
+	tools: {
+		web: {
+			fetch: {
+				enabled: true,
+				maxChars: 50000,
+				maxCharsCap: 50000,
+				timeoutSeconds: 30,
+				cacheTtlMinutes: 15,
+				maxRedirects: 3,
+				userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+				readability: true,
+				firecrawl: {
+					enabled: true,
+					apiKey: "FIRECRAWL_API_KEY_HERE", // optional if FIRECRAWL_API_KEY is set
+					baseUrl: "https://api.firecrawl.dev",
+					onlyMainContent: true,
+					maxAgeMs: 86400000, // ms (1 day)
+					timeoutSeconds: 60,
+				},
+			},
+		},
+	},
 }
 ```
 
@@ -260,4 +287,4 @@ Notes:
 - See [Firecrawl](/tools/firecrawl) for key setup and service details.
 - Responses are cached (default 15 minutes) to reduce repeated fetches.
 - If you use tool profiles/allowlists, add `web_search`/`web_fetch` or `group:web`.
-- If the Brave key is missing, `web_search` returns a short setup hint with a docs link.
+- If the provider key is missing, `web_search` returns a short setup hint with a docs link.

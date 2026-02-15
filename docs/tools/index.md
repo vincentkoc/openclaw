@@ -19,7 +19,7 @@ You can globally allow/deny tools via `tools.allow` / `tools.deny` in `openclaw.
 
 ```json5
 {
-  tools: { deny: ["browser"] },
+	tools: { deny: ["browser"] },
 }
 ```
 
@@ -45,10 +45,10 @@ Example (messaging-only by default, allow Slack + Discord tools too):
 
 ```json5
 {
-  tools: {
-    profile: "messaging",
-    allow: ["slack", "discord"],
-  },
+	tools: {
+		profile: "messaging",
+		allow: ["slack", "discord"],
+	},
 }
 ```
 
@@ -56,10 +56,10 @@ Example (coding profile, but deny exec/process everywhere):
 
 ```json5
 {
-  tools: {
-    profile: "coding",
-    deny: ["group:runtime"],
-  },
+	tools: {
+		profile: "coding",
+		deny: ["group:runtime"],
+	},
 }
 ```
 
@@ -67,15 +67,15 @@ Example (global coding profile, messaging-only support agent):
 
 ```json5
 {
-  tools: { profile: "coding" },
-  agents: {
-    list: [
-      {
-        id: "support",
-        tools: { profile: "messaging", allow: ["slack"] },
-      },
-    ],
-  },
+	tools: { profile: "coding" },
+	agents: {
+		list: [
+			{
+				id: "support",
+				tools: { profile: "messaging", allow: ["slack"] },
+			},
+		],
+	},
 }
 ```
 
@@ -94,12 +94,12 @@ Example (keep global coding profile, but minimal tools for Google Antigravity):
 
 ```json5
 {
-  tools: {
-    profile: "coding",
-    byProvider: {
-      "google-antigravity": { profile: "minimal" },
-    },
-  },
+	tools: {
+		profile: "coding",
+		byProvider: {
+			"google-antigravity": { profile: "minimal" },
+		},
+	},
 }
 ```
 
@@ -107,12 +107,12 @@ Example (provider/model-specific allowlist for a flaky endpoint):
 
 ```json5
 {
-  tools: {
-    allow: ["group:fs", "group:runtime", "sessions_list"],
-    byProvider: {
-      "openai/gpt-5.2": { allow: ["group:fs", "sessions_list"] },
-    },
-  },
+	tools: {
+		allow: ["group:fs", "group:runtime", "sessions_list"],
+		byProvider: {
+			"openai/gpt-5.2": { allow: ["group:fs", "sessions_list"] },
+		},
+	},
 }
 ```
 
@@ -120,18 +120,18 @@ Example (agent-specific override for a single provider):
 
 ```json5
 {
-  agents: {
-    list: [
-      {
-        id: "support",
-        tools: {
-          byProvider: {
-            "google-antigravity": { allow: ["message", "sessions_list"] },
-          },
-        },
-      },
-    ],
-  },
+	agents: {
+		list: [
+			{
+				id: "support",
+				tools: {
+					byProvider: {
+						"google-antigravity": { allow: ["message", "sessions_list"] },
+					},
+				},
+			},
+		],
+	},
 }
 ```
 
@@ -157,9 +157,9 @@ Example (allow only file tools + browser):
 
 ```json5
 {
-  tools: {
-    allow: ["group:fs", "browser"],
-  },
+	tools: {
+		allow: ["group:fs", "browser"],
+	},
 }
 ```
 
@@ -226,7 +226,7 @@ Notes:
 
 ### `web_search`
 
-Search the web using Brave Search API.
+Search the web using your configured provider (Brave, Perplexity, Grok, or Tavily).
 
 Core parameters:
 
@@ -235,7 +235,7 @@ Core parameters:
 
 Notes:
 
-- Requires a Brave API key (recommended: `openclaw configure --section web`, or set `BRAVE_API_KEY`).
+- Requires a provider API key (for example `BRAVE_API_KEY` or `TAVILY_API_KEY`).
 - Enable via `tools.web.search.enabled`.
 - Responses are cached (default 15 min).
 - See [Web tools](/tools/web) for setup.
@@ -340,13 +340,13 @@ Example (`run`):
 
 ```json
 {
-  "action": "run",
-  "node": "office-mac",
-  "command": ["echo", "Hello"],
-  "env": ["FOO=bar"],
-  "commandTimeoutMs": 12000,
-  "invokeTimeoutMs": 45000,
-  "needsScreenRecording": false
+	"action": "run",
+	"node": "office-mac",
+	"command": ["echo", "Hello"],
+	"env": ["FOO=bar"],
+	"commandTimeoutMs": 12000,
+	"invokeTimeoutMs": 45000,
+	"needsScreenRecording": false
 }
 ```
 
