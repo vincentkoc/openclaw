@@ -22,7 +22,7 @@
 
 ### Formatting Utilities (`src/infra/`)
 
-- **Time formatting**: `src\infra\format-time`
+- **Time formatting**: `src/infra/format-time`
 
 **NEVER create local `formatAge`, `formatDuration`, `formatElapsedTime` functions - import from centralized modules.**
 
