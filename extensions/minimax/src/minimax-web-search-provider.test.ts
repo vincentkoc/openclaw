@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { __testing } from "./minimax-web-search-provider.js";
+import { __testing, createMiniMaxWebSearchProvider } from "./minimax-web-search-provider.js";
 
 const {
   MINIMAX_SEARCH_ENDPOINT_GLOBAL,
@@ -27,6 +27,15 @@ describe("minimax web search provider", () => {
     process.env.MINIMAX_CODE_PLAN_KEY = originalCodePlanKey;
     process.env.MINIMAX_CODING_API_KEY = originalCodingApiKey;
     process.env.MINIMAX_API_KEY = originalApiKey;
+  });
+
+  it("exposes setup-visible metadata", () => {
+    const provider = createMiniMaxWebSearchProvider();
+
+    expect(provider.id).toBe("minimax");
+    expect(provider.label).toBe("MiniMax Search");
+    expect(provider.onboardingScopes).toEqual(["text-inference"]);
+    expect(provider.credentialPath).toBe("plugins.entries.minimax.config.webSearch.apiKey");
   });
 
   describe("resolveMiniMaxRegion", () => {

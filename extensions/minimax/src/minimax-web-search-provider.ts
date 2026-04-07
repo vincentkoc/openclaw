@@ -273,6 +273,7 @@ export function createMiniMaxWebSearchProvider(): WebSearchProviderPlugin {
     id: "minimax",
     label: "MiniMax Search",
     hint: "Structured results via MiniMax Coding Plan search API",
+    onboardingScopes: ["text-inference"],
     credentialLabel: "MiniMax Coding Plan key",
     envVars: [...MINIMAX_CODING_PLAN_ENV_VARS],
     placeholder: "sk-cp-...",

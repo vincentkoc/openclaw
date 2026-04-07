@@ -34,6 +34,7 @@ describe("duckduckgo web search provider", () => {
 
     expect(provider.id).toBe("duckduckgo");
     expect(provider.label).toBe("DuckDuckGo Search (experimental)");
+    expect(provider.onboardingScopes).toEqual(["text-inference"]);
     expect(provider.requiresCredential).toBe(false);
     expect(provider.credentialPath).toBe("");
     expect(applied.plugins?.entries?.duckduckgo?.enabled).toBe(true);
