@@ -52,7 +52,7 @@ export function listSearchProviderOptions(
 function showsSearchProviderInSetup(
   entry: Pick<PluginWebSearchProviderEntry, "onboardingScopes">,
 ): boolean {
-  return entry.onboardingScopes?.includes("text-inference") ?? false;
+  return entry.onboardingScopes ? entry.onboardingScopes.includes("text-inference") : true;
 }
 
 export function resolveSearchProviderOptions(
