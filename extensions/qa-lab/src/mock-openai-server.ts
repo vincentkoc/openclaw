@@ -35,6 +35,14 @@ type MockOpenAiRequestSnapshot = {
 
 const TINY_PNG_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7Z0nQAAAAASUVORK5CYII=";
+const QA_REASONING_ONLY_RECOVERY_PROMPT_RE = /reasoning-only continuation qa check/i;
+const QA_REASONING_ONLY_SIDE_EFFECT_PROMPT_RE = /reasoning-only after write safety check/i;
+const QA_EMPTY_RESPONSE_RECOVERY_PROMPT_RE = /empty response continuation qa check/i;
+const QA_EMPTY_RESPONSE_EXHAUSTION_PROMPT_RE = /empty response exhaustion qa check/i;
+const QA_REASONING_ONLY_RETRY_NEEDLE =
+  "recorded reasoning but did not produce a user-visible answer";
+const QA_EMPTY_RESPONSE_RETRY_NEEDLE =
+  "The previous attempt did not produce a user-visible answer.";
 let subagentFanoutPhase = 0;
 
 function readBody(req: IncomingMessage): Promise<string> {
@@ -526,6 +534,37 @@ function buildAssistantEvents(text: string): StreamEvent[] {
   ];
 }
 
+function buildReasoningOnlyEvents(summaryText: string, id: string): StreamEvent[] {
+  const reasoningItem = {
+    type: "reasoning",
+    id,
+    summary: [{ text: summaryText }],
+  } as const;
+  return [
+    {
+      type: "response.output_item.added",
+      item: {
+        type: "reasoning",
+        id,
+        summary: [],
+      },
+    },
+    {
+      type: "response.output_item.done",
+      item: reasoningItem,
+    },
+    {
+      type: "response.completed",
+      response: {
+        id: `resp_${id}`,
+        status: "completed",
+        output: [reasoningItem],
+        usage: { input_tokens: 64, output_tokens: 8, total_tokens: 72 },
+      },
+    },
+  ];
+}
+
 async function buildResponsesPayload(body: Record<string, unknown>) {
   const input = Array.isArray(body.input) ? (body.input as ResponsesInputItem[]) : [];
   const prompt = extractLastUserText(input);
@@ -534,8 +573,52 @@ async function buildResponsesPayload(body: Record<string, unknown>) {
   const allInputText = extractAllInputTexts(input);
   const isGroupChat = allInputText.includes('"is_group_chat": true');
   const isBaselineUnmentionedChannelChatter = /\bno bot ping here\b/i.test(prompt);
+  const hasReasoningOnlyRetryInstruction = allInputText.includes(QA_REASONING_ONLY_RETRY_NEEDLE);
+  const hasEmptyResponseRetryInstruction = allInputText.includes(QA_EMPTY_RESPONSE_RETRY_NEEDLE);
   if (isHeartbeatPrompt(prompt)) {
     return buildAssistantEvents("HEARTBEAT_OK");
+  }
+  if (QA_REASONING_ONLY_RECOVERY_PROMPT_RE.test(allInputText)) {
+    if (!toolOutput) {
+      return buildToolCallEventsWithArgs("read", { path: "QA_KICKOFF_TASK.md" });
+    }
+    if (!hasReasoningOnlyRetryInstruction) {
+      return buildReasoningOnlyEvents(
+        "Need visible answer after reading the QA kickoff task.",
+        "rs_mock_reasoning_recovery",
+      );
+    }
+    return buildAssistantEvents("REASONING-RECOVERED-OK");
+  }
+  if (QA_REASONING_ONLY_SIDE_EFFECT_PROMPT_RE.test(allInputText)) {
+    if (!toolOutput) {
+      return buildToolCallEventsWithArgs("write", {
+        path: "reasoning-only-side-effect.txt",
+        content: "side effects already happened\n",
+      });
+    }
+    if (!hasReasoningOnlyRetryInstruction) {
+      return buildReasoningOnlyEvents(
+        "Need visible answer after the write, but the write already happened.",
+        "rs_mock_reasoning_side_effect",
+      );
+    }
+    return buildAssistantEvents("BUG-SHOULD-NOT-AUTO-RETRY");
+  }
+  if (QA_EMPTY_RESPONSE_RECOVERY_PROMPT_RE.test(allInputText)) {
+    if (!toolOutput) {
+      return buildToolCallEventsWithArgs("read", { path: "QA_KICKOFF_TASK.md" });
+    }
+    if (!hasEmptyResponseRetryInstruction) {
+      return buildAssistantEvents("");
+    }
+    return buildAssistantEvents("EMPTY-RECOVERED-OK");
+  }
+  if (QA_EMPTY_RESPONSE_EXHAUSTION_PROMPT_RE.test(allInputText)) {
+    if (!toolOutput) {
+      return buildToolCallEventsWithArgs("read", { path: "QA_KICKOFF_TASK.md" });
+    }
+    return buildAssistantEvents("");
   }
   if (/lobster invaders/i.test(prompt)) {
     if (!toolOutput) {
