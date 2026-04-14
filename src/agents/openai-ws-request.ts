@@ -1,5 +1,6 @@
 import type { StreamFn } from "@mariozechner/pi-agent-core";
 import { readStringValue } from "../shared/string-coerce.js";
+import { mapOpenAIReasoningEffortForModel } from "./openai-reasoning-compat.js";
 import type {
   FunctionToolDefinition,
   InputItem,
@@ -70,10 +71,13 @@ export function buildOpenAIWebSocketResponseCreatePayload(params: {
     extraParams.tool_choice = streamOpts.toolChoice;
   }
 
-  const reasoningEffort =
-    streamOpts?.reasoningEffort ??
-    streamOpts?.reasoning ??
-    (params.model.reasoning ? "high" : undefined);
+  const reasoningEffort = mapOpenAIReasoningEffortForModel({
+    model: params.model,
+    effort:
+      streamOpts?.reasoningEffort ??
+      streamOpts?.reasoning ??
+      (params.model.reasoning ? "high" : undefined),
+  });
   if (reasoningEffort !== "none" && (reasoningEffort || streamOpts?.reasoningSummary)) {
     const reasoning: { effort?: string; summary?: string } = {};
     if (reasoningEffort !== undefined) {
