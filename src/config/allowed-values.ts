@@ -18,6 +18,9 @@ function truncateHintText(text: string, limit: number): string {
 }
 
 function safeStringify(value: unknown): string {
+  if (value === undefined) {
+    return "";
+  }
   try {
     const serialized = JSON.stringify(value);
     if (serialized !== undefined) {
