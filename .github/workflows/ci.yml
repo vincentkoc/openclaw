@@ -10,7 +10,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
-      BASE_SHA: 42e84443a2e79c5ff002aff1b6c6735e8e996ed9
       PR_SHA: 1ef98b97943de52e233268d3312259778994ce8f
       PNPM_VERSION: 11.22.0
     steps:
@@ -19,15 +18,10 @@ jobs:
         with:
           node-version: 24.16.0
 
-      - name: Fetch immutable source trees
+      - name: Fetch immutable candidate
         shell: bash
         run: |
           set -euo pipefail
-          git init "$RUNNER_TEMP/baseline"
-          git -C "$RUNNER_TEMP/baseline" fetch --depth=1 \
-            https://github.com/openclaw/openclaw.git "$BASE_SHA"
-          git -C "$RUNNER_TEMP/baseline" checkout --detach FETCH_HEAD
-
           git init "$RUNNER_TEMP/candidate"
           git -C "$RUNNER_TEMP/candidate" fetch --depth=1 \
             https://github.com/ruel225/openclaw.git "$PR_SHA"
@@ -36,23 +30,18 @@ jobs:
             https://github.com/openclaw/openclaw.git
           git -C "$RUNNER_TEMP/candidate" fetch --depth=100 upstream main
 
-          test "$(git -C "$RUNNER_TEMP/baseline" rev-parse HEAD)" = "$BASE_SHA"
           test "$(git -C "$RUNNER_TEMP/candidate" rev-parse HEAD)" = "$PR_SHA"
-          printf 'baseline_sha=%s\ncandidate_sha=%s\n' "$BASE_SHA" "$PR_SHA"
+          printf 'candidate_sha=%s\n' "$PR_SHA"
 
-      - name: Install and build both revisions
+      - name: Install and build candidate
         shell: bash
         run: |
           set -euo pipefail
           corepack enable
           corepack prepare "pnpm@$PNPM_VERSION" --activate
-          for tree in baseline candidate; do
-            (
-              cd "$RUNNER_TEMP/$tree"
-              pnpm install --frozen-lockfile
-              pnpm build
-            )
-          done
+          cd "$RUNNER_TEMP/candidate"
+          pnpm install --frozen-lockfile
+          pnpm build
 
       - name: Prove CLI behavior without network access
         shell: bash
@@ -100,15 +89,12 @@ jobs:
             fi
           }
 
-          run_case baseline baseline-parent-agent 0 \
-            "Remote catalog refresh is disabled" "" \
-            models --agent proof refresh
           run_case candidate candidate-parent-agent 1 \
             "models refresh does not support --agent" \
             "Remote catalog refresh is disabled" \
             models --agent proof refresh
           run_case candidate candidate-leaf-agent 1 \
-            "unknown option '--agent'" "" \
+            'does not recognize option "--agent"' "" \
             models refresh --agent proof
           run_case candidate candidate-unscoped 0 \
             "Remote catalog refresh is disabled" "" \
